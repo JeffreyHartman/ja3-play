@@ -13,7 +13,7 @@ Paths in this file are relative to this skill folder. The engine calls that work
 
 1. **Launch.** On Linux, run `scripts/launch.sh`. It finds the game and Proton in the Steam libraries and starts the debug build through Proton. If the debugger already listens, it starts nothing. On Windows, run `JA3Debug.exe -no_interactive_asserts` from the game folder. Done when the script prints `debugger listening`.
 2. **Wait for the main menu.** Run `scripts/lua.py -e 'GetDialog("PreGameMenu") ~= nil'` every 5 s. Done when it prints `OK true`. Before that, the debugger already answers, but the save list is not ready. This took about 20 s after the port opened.
-3. **Load a save.** List the saves, load one in a thread, and poll until the map name changes. Then close the satellite view if it is open, because it pauses the game. Done when `PauseReasons` is empty. The calls are in [reference.md](reference.md#load-and-save).
+3. **Load a save.** List the saves and load one in a thread. The calls are in [reference.md](reference.md#load-and-save). Then run `scripts/wait-load.sh`. After a load, the loading screen stays open and waits for a click on "Start". The script waits for the loaded state and clicks Start. Then close the satellite view and the notification popup if they are open, because they pause the game. Done when `PauseReasons` is empty.
 4. **Play.** Repeat this loop:
    - Read the state with `scripts/lua.py lua/state.lua`. The `ctl=true` units are the units that the player controls now.
    - Run one action in a game-time thread. See [Lua in the debugger](#lua-in-the-debugger).
@@ -39,7 +39,8 @@ Do not forward port 8165 to another machine except through SSH. Any client on th
 - `ActionPoints` is in 1/1000 AP. Divide by 1000.
 - The AP cost estimate of an action can be wrong when mods change the costs. Read the AP of the unit before and after the action.
 - `u.side` is nil. Use `u.team.side`. `control` of a team is `UI` for the player and `AI` for the computer.
-- The debug build logs Lua errors that the release build hides, also from other mods. Keep only the errors with a stack line in the mod under test. Give `scripts/log.sh` a tag pattern for the lines of that mod, for example `scripts/log.sh '\[IIS\]|\[PROBE\]'`.
+- The debug build logs Lua errors that the release build hides, also from other mods. Keep only the errors with a stack line in the mod under test. After each load, many `Trying to use a UserText before AsyncFilterUserTexts` errors come through `CommonLua` localization. They are not from the mod under test if no stack line names the mod as the origin. Give `scripts/log.sh` a tag pattern for the lines of that mod, for example `scripts/log.sh '\[IIS\]|\[PROBE\]'`.
+- `QuickSave()` replaces the one quick save of the current campaign. Tell the user before you quick save in their campaign.
 - Hit rolls are random. To compare two versions of a mod, run each one several times from the same save.
 - `WriteScreenshot` captures the 3D scene only, with no UI. A desktop screenshot of the UI did not work while the desktop was locked.
 - Over SSH, `scripts/launch.sh` sets the display variables of the local desktop. The game opens a real window there.
