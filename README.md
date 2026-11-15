@@ -15,7 +15,9 @@ The skill has instructions, a table of engine calls, and small scripts:
 | `skills/ja3-play/scripts/launch.sh` | Linux: starts `JA3Debug.exe` through Proton and waits for the debugger. |
 | `skills/ja3-play/scripts/stop.sh` | Linux: stops the game. |
 | `skills/ja3-play/scripts/lua.py` | Runs Lua in the game and prints the result. Python 3, standard library only. |
-| `skills/ja3-play/scripts/log.sh` | Linux: prints the errors and tagged lines of the newest debug log. |
+| `skills/ja3-play/scripts/log.sh` | Linux: prints the errors and tagged lines of the newest debug log, from the start or from a marker line. |
+| `skills/ja3-play/scripts/wait.sh` | Evaluates a Lua expression until it returns true. |
+| `skills/ja3-play/scripts/wait-load.sh` | Waits for a save load to finish, and clicks Start on the loading screen. |
 | `skills/ja3-play/lua/*.lua` | Example blocks: the state, an attack, enemy spawns. |
 
 ## Install

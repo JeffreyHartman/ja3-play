@@ -4,15 +4,8 @@
 set -uo pipefail
 S="$(dirname "$0")"
 
-for _ in $(seq 1 40); do
-	sleep 3
-	r=$("$S/lua.py" -e 'tostring(GetDialog("XZuluLoadingScreen") and GetDialog("XZuluLoadingScreen"):GetContext().loaded)')
-	if [[ "$r" == "OK true" ]]; then
-		# LoadingScreenClose with the reason "loaded" calls LocalPlayerClickedReady, as the Start button does (Lua/UI/LoadingScreen.lua).
-		"$S/lua.py" -e 'CreateRealTimeThread(LoadingScreenClose, "idLoadedLoadingScreen", "loaded") and "clicked"'
-		sleep 3
-		exit 0
-	fi
-done
-echo "timeout"
-exit 1
+sleep 3
+"$S/wait.sh" -t 120 'GetDialog("XZuluLoadingScreen") ~= nil and GetDialog("XZuluLoadingScreen"):GetContext().loaded == true' >/dev/null || { echo "timeout"; exit 1; }
+# LoadingScreenClose with the reason "loaded" calls LocalPlayerClickedReady, as the Start button does (Lua/UI/LoadingScreen.lua).
+"$S/lua.py" -e 'CreateRealTimeThread(LoadingScreenClose, "idLoadedLoadingScreen", "loaded") and "clicked"'
+sleep 3
