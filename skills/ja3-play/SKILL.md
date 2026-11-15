@@ -9,16 +9,34 @@ description: Play Jagged Alliance 3 through the Lua debugger of its debug build.
 
 Paths in this file are relative to this skill folder. The engine calls that worked, and the ones found in the source, are in [reference.md](reference.md). Read it before you write Lua for an area that the steps below do not cover.
 
+## Where to run
+
+Pick the branch from the request:
+
+- **Inline.** Run the steps in this session if the user asked for the game itself: to play, to launch or stop JA3, to run Lua, or to read the log. Also run them inline if your brief names you the playtest agent.
+- **Playtest agent.** If the game test is one step of other work, for example the test of a ticket or a fix, start a playtest agent with the Agent tool. A new agent writes about 32k tokens to the cache once. After that, each of its turns reads a small context, and a game test takes about 40 turns.
+
+The brief of the playtest agent contains:
+
+- The sentence "You are the playtest agent. Run the ja3-play skill inline."
+- The build under test, and the command that deploys it. The game loads mod code only at start.
+- The save to load, and the setup before the checks.
+- Each check, with the log line or Lua value that makes it pass.
+- The tag pattern of the mod for `scripts/log.sh`.
+- The report: PASS or FAIL for each check, with the log lines and Lua values that show it, in 300 words or fewer. The playtest agent reports bugs and changes no source files.
+
+If a check fails, fix the code in this session, deploy it, and send the retest to the same agent with SendMessage.
+
 ## Steps
 
 1. **Launch.** On Linux, run `scripts/launch.sh`. It finds the game and Proton in the Steam libraries and starts the debug build through Proton. If the debugger already listens, it starts nothing. On Windows, run `JA3Debug.exe -no_interactive_asserts` from the game folder. Done when the script prints `debugger listening`.
-2. **Wait for the main menu.** Run `scripts/lua.py -e 'GetDialog("PreGameMenu") ~= nil'` every 5 s. Done when it prints `OK true`. Before that, the debugger already answers, but the save list is not ready. This took about 20 s after the port opened.
+2. **Wait for the main menu.** Run `scripts/wait.sh 'GetDialog("PreGameMenu") ~= nil'`. Done when it prints `OK true`. Before that, the debugger already answers, but the save list is not ready. This took about 20 s after the port opened.
 3. **Load a save.** List the saves and load one in a thread. The calls are in [reference.md](reference.md#load-and-save). Then run `scripts/wait-load.sh`. After a load, the loading screen stays open and waits for a click on "Start". The script waits for the loaded state and clicks Start. Then close the satellite view and the notification popup if they are open, because they pause the game. Done when `PauseReasons` is empty.
 4. **Play.** Repeat this loop:
    - Read the state with `scripts/lua.py lua/state.lua`. The `ctl=true` units are the units that the player controls now.
    - Run one action in a game-time thread. See [Lua in the debugger](#lua-in-the-debugger).
-   - Read the state again until the action ends: the AP changed, the team changed, or the combat ended.
-   - Read the log with `scripts/log.sh` to see what the game and the mods reported.
+   - Wait until the action ends with `scripts/wait.sh EXPR`: the AP changed, the team changed, or the combat ended.
+   - Read the log of the action with `scripts/log.sh -s MARK`. MARK is the text of a `[PROBE]` line that you printed before the action. Then the output starts at that line.
 5. **Stop and clean up.** Run `scripts/stop.sh`. Delete each screenshot that you wrote. Done when the script prints `stopped`.
 
 Do not forward port 8165 to another machine except through SSH. Any client on the port can run any code with `io` and `os`.
@@ -31,6 +49,7 @@ Do not forward port 8165 to another machine except through SSH. Any client on th
   - `CreateRealTimeThread(function() ... end)` for loads, saves, screenshots and UI.
   - `CreateGameTimeThread(function() action:Execute({u}, args) end)` for a combat action.
 - `print("[PROBE] ...")` from a block or its threads writes to the game log. The game buffers its log, and `FlushLogFile()` writes the buffer to the file. `scripts/log.sh` calls it for you when the game runs.
+- `scripts/wait.sh EXPR` evaluates EXPR every 3 s until it returns `true`. Use it for each wait on the game state, in place of a loop that you write. `-t` sets the timeout, and `-p STATUS_EXPR` prints a status expression on each try.
 - The state stays between calls. A global that one block sets, the next block can read.
 - Mod globals are in the mod environment, not in `_G`: `table.find_value(ModsLoaded, "id", "<mod id>").env`. That table also has `.version` and `.options`.
 
