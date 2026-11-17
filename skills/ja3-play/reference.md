@@ -1,6 +1,6 @@
 # JA3 engine calls
 
-Labels: **Tested** means that a call ran through the debugger in a game on 2026-11-14 or 2026-11-15. **Source** means that it was read in the game Lua and did not run. Source paths are relative to the extracted game Lua (`Lua/`, `CommonLua/`). The same `CommonLua` is in `<game>/ModTools/Src/CommonLua/`.
+Labels: **Tested** means that a call ran through the debugger in a game from 2026-11-14 to 2026-11-16. **Source** means that it was read in the game Lua and did not run. Source paths are relative to the extracted game Lua (`Lua/`, `CommonLua/`). The same `CommonLua` is in `<game>/ModTools/Src/CommonLua/`.
 
 ## Load and save
 
@@ -47,11 +47,12 @@ The save is ready when `GetDialog("XZuluLoadingScreen") and GetDialog("XZuluLoad
 |---|---|---|
 | Attack | `local a = u:GetDefaultAttackAction() CreateGameTimeThread(function() a:Execute({u}, {target = enemy}) end)`. Works in a player turn and in a quickdraw interrupt. See `lua/attack.lua`. | Tested |
 | Any combat action | `CombatActions[action_id]:Execute({u}, args)`, then wait while `#SyncEventsQueue > 0` and while `not u:IsIdleCommand()` (`Lua/GameTests.lua:162-173`) | Source |
-| Move | `CombatActions.Move:Execute({u}, {goto_pos = pos})` (`Lua/GameTests.lua:194`) | Source |
+| Move | `CreateGameTimeThread(function() CombatActions.Move:Execute({u}, {goto_pos = SnapToPassSlab(point(x, y))}) end)` (`Lua/GameTests.lua:194`). Works in exploration and in combat. `IModeExploration:MoveUnitsTo` moved the units once and then did nothing. | Tested |
 | Queue an action as the UI does | `StartCombatAction(action_id, u, ap, ...)` (`Lua/CombatActions.lua:149`) | Source |
-| End the turn | `NetSyncEvent("EndTurn", netUniqueId)`. In a quickdraw interrupt, it ends the interrupt. | Tested |
+| End the turn | `NetSyncEvent("EndTurn", netUniqueId)`. In a quickdraw interrupt, it ends the interrupt. In player turn 1, the first send can fail. See [Known problems in combat](#known-problems-in-combat). | Tested |
 | Wait for a mod event | Poll a state function of the mod every 3 s, and send `EndTurn` on each `player1` turn. For quickdraw: `table.find_value(ModsLoaded, "id", "ImprovedInterruptSystem").env.IISControl.Active()`. | Tested |
-| Start combat | `NetSyncEvent("ExplorationStartCombat")`. Only when the game is not paused. In the test, only 2 of 5 mercs joined, and nobody found why. | Tested |
+| Start combat | Move a merc toward the enemies until `g_Combat` is set. On F10, a move of Fox to `point(118*1200, 140*1200)` started combat. | Tested |
+| Start combat at once | `NetSyncEvent("ExplorationStartCombat")`. Only when the game is not paused. In the test, only 2 of 5 mercs joined, and nobody found why. Use the move above. | Tested |
 | Wait for idle units | `WaitUnitsInIdle()`, in a thread (`Lua/Tactical/Combat.lua:268`) | Source |
 
 ## Set up a test
@@ -63,8 +64,39 @@ The save is ready when `GetDialog("XZuluLoadingScreen") and GetDialog("XZuluLoad
 | Offset by tiles | `pos + point(dx * const.SlabSizeX, dy * const.SlabSizeY, 0)` | Tested |
 | Cheats | `NetSyncEvent("CheatEnable", "InfiniteAP", nil, side)`, also `"WeakDamage"`, `"GodMode"`, `"FullVisibility"` (`Lua/Cheat.lua:10-80`) | Source |
 | Keep the mercs alive | `NetSyncEvent("CheatEnable", "GodMode", nil, "player1")`. The mercs lived through many enemy turns. It also raised their AP. | Tested |
-| A test fight | `InitTestCombat(combat, team_defs)` with `TestTeamDef{ mercs, side, ai_control }` (`Lua/Tactical/TestCombat.lua:18-75`). With `ai_control = true` on both teams, the game plays both sides. | Source |
+| A test fight | See [Test fights](#test-fights). | Tested |
+| A test fight with AI on both sides | `InitTestCombat(combat, team_defs)` with `TestTeamDef{ mercs, side, ai_control }` (`Lua/Tactical/TestCombat.lua:18-75`). With `ai_control = true` on both teams, the game plays both sides. | Source |
 | Screenshot of the 3D scene | `CreateRealTimeThread(function() WriteScreenshot("AppData/claude_probe.png", 1280, 720) end)`. `AppData/` is `AppData/Roaming/Jagged Alliance 3/`. The PNG is about 2.5 MB, so make a small JPEG before you read it. | Tested |
+
+## Test fights
+
+A test fight starts a `TestCombat` preset on its map with a new game session. It needs no save. Three runs on 2026-11-16 used it, two in vanilla and one with GBO 4. The presets are in `Data/TestCombat.lua` of the extracted game, under `Presets.TestCombat[group][id]`. The group `Test Encounters` has three F10 skirmishes, for example `F10_Skirmish_Maniac_Scout_Marauder`.
+
+1. Run `scripts/lua.py lua/test-fight.lua`. It starts the preset with the fixed party Wolf, Steroid, Fox and Kalyna. Without a player squad, `TestCombatEnterSector` picks one of 7 parties at random (`Lua/GameSession.lua:817`).
+2. Run `scripts/wait-load.sh`.
+3. Run `scripts/wait.sh 'IsKindOf(GetInGameInterfaceModeDlg(), "IModeDeployment")'`.
+4. End the deployment with `CreateRealTimeThread(function() GetInGameInterfaceModeDlg():StartExploration() end)` (`Lua/GameTests.lua:544`). The game goes to `IModeExploration`, not to combat.
+5. If the mod under test has a log level option, set it again: `m.options.LogLevel = "Info"`, then `Msg("ApplyModOptions", m.id)`. `m` is the entry of the mod in `ModsLoaded`. Do this after each fight start.
+6. Start combat with a move of a merc toward the enemies. See [Act](#act).
+
+## Change the mod list
+
+`AccountStorage.LoadMods` is the list of mods that the game loads at start, in load order. This procedure ran on 2026-11-16, and all 33 mods loaded again in the same order after the restore.
+
+1. Write a backup: `local f = io.open(path, "w") f:write(TableToLuaCode(AccountStorage.LoadMods)) f:close()`. Read it back with `dofile(path)` and compare it to the live list.
+2. Run `AllModsOff()`, then `TurnModOn("<mod id>")` for each mod of the test, then `SaveAccountStorage()`.
+3. Run `scripts/wait.sh 'not SaveAccountStorageSaving and not SaveAccountStorageRequestTime and not IsValidThread(SaveAccountStorageThread)'`.
+4. Run `scripts/stop.sh`, then `scripts/launch.sh`.
+5. To restore, run `AccountStorage.LoadMods = table.copy(dofile(path))` and `SaveAccountStorage()`. Then do steps 3 and 4 again.
+
+## Known problems in combat
+
+These came from an auto-player: a loop that acts for each controllable merc and sends `EndTurn` on each `player1` turn.
+
+- In player turn 1 of three runs, the first `EndTurn` did not register. `g_Combat.player_end_turn[netUniqueId]` stayed nil. In one run, the fourth send worked. In the other two runs, five sends failed, and one `EndTurn` from a separate `scripts/lua.py` call worked at once. In later turns, the first send worked. The cause is not known. After each `EndTurn`, wait 3 s for the turn to change, and send it again up to 5 times.
+- In player turn 1 of three runs, only the first merc acted. The other mercs logged no line. The cause is not known. Read the AP of each merc after turn 1.
+- In a merc interrupt with one controllable merc, the wait of the auto-player for the interrupt to end ran its full 90 s limit (JeffreyHartman/ja3-improved-interrupt-system#7).
+- A merc that starts a turn with 0 AP has negative personal morale. `Unit:BeginTurn` removes 1 AP for each point below 0 (`Lua/Tactical/Unit.lua:2752-2756`). This is vanilla behavior, not a bug.
 
 ## Popups and the strategic layer
 
