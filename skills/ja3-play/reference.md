@@ -46,12 +46,15 @@ The save is ready when `GetDialog("XZuluLoadingScreen") and GetDialog("XZuluLoad
 | Need | Call | Label |
 |---|---|---|
 | Attack | `local a = u:GetDefaultAttackAction() CreateGameTimeThread(function() a:Execute({u}, {target = enemy}) end)`. Works in a player turn and in a quickdraw interrupt. See `lua/attack.lua`. | Tested |
+| Check an attack before you send it | `a:GetUIState({u}, {target = enemy})` returns `"enabled"` when the UI would allow it. A `MeleeAttack` showed `enabled` for a target 20 tiles away and then did not start. Read the AP before and after the attack. | Tested |
+| Overwatch | `CombatActions.Overwatch:Execute({u}, {target = enemy:GetPos()})`. `g_Overwatch[u]` is set while the unit is on Overwatch. | Tested |
 | Any combat action | `CombatActions[action_id]:Execute({u}, args)`, then wait while `#SyncEventsQueue > 0` and while `not u:IsIdleCommand()` (`Lua/GameTests.lua:162-173`) | Source |
 | Move | `CreateGameTimeThread(function() CombatActions.Move:Execute({u}, {goto_pos = SnapToPassSlab(point(x, y))}) end)` (`Lua/GameTests.lua:194`). Works in exploration and in combat. `IModeExploration:MoveUnitsTo` moved the units once and then did nothing. | Tested |
+| Tiles that a unit can reach | `local cp = CombatPath:new() cp:RebuildPaths(u, ap)`. The keys of `cp.destinations` are packed points. Unpack one with `point(point_unpack(p))`, and give it to `Move` as `goto_pos`. | Tested |
 | Queue an action as the UI does | `StartCombatAction(action_id, u, ap, ...)` (`Lua/CombatActions.lua:149`) | Source |
-| End the turn | `NetSyncEvent("EndTurn", netUniqueId)`. In a quickdraw interrupt, it ends the interrupt. In player turn 1, the first send can fail. See [Known problems in combat](#known-problems-in-combat). | Tested |
+| End the turn | `NetSyncEvent("EndTurn", netUniqueId)` from `evaluate`, or `CreateRealTimeThread(NetSyncEvent, "EndTurn", netUniqueId)` from a thread. A send from a game-time thread did not register: `g_Combat.player_end_turn` stayed nil. In a quickdraw interrupt, it ends the interrupt. In player turn 1, the first send can fail. See [Known problems in combat](#known-problems-in-combat). | Tested |
 | Wait for a mod event | Poll a state function of the mod every 3 s, and send `EndTurn` on each `player1` turn. For quickdraw: `table.find_value(ModsLoaded, "id", "ImprovedInterruptSystem").env.IISControl.Active()`. | Tested |
-| Start combat | Move a merc toward the enemies until `g_Combat` is set. On F10, a move of Fox to `point(118*1200, 140*1200)` started combat. | Tested |
+| Start combat | Move a merc toward the enemies until `g_Combat` is set. In `F10_Skirmish_Sniper_Grenadier_Goon`, a move of Fox to `point(118*1200, 140*1200)` started combat. No other preset was tested with this point. | Tested |
 | Start combat at once | `NetSyncEvent("ExplorationStartCombat")`. Only when the game is not paused. In the test, only 2 of 5 mercs joined, and nobody found why. Use the move above. | Tested |
 | Wait for idle units | `WaitUnitsInIdle()`, in a thread (`Lua/Tactical/Combat.lua:268`) | Source |
 
@@ -70,14 +73,27 @@ The save is ready when `GetDialog("XZuluLoadingScreen") and GetDialog("XZuluLoad
 
 ## Test fights
 
-A test fight starts a `TestCombat` preset on its map with a new game session. It needs no save. Three runs on 2026-11-16 used it, two in vanilla and one with GBO 4. The presets are in `Data/TestCombat.lua` of the extracted game, under `Presets.TestCombat[group][id]`. The group `Test Encounters` has three F10 skirmishes, for example `F10_Skirmish_Maniac_Scout_Marauder`.
+A test fight starts a `TestCombat` preset on its map with a new game session. It needs no save. Three runs on 2026-11-16 used it, two in vanilla and one with GBO 4. The presets are in `Data/TestCombat.lua` of the extracted game, under `Presets.TestCombat[group][id]`. The group `Test Encounters` has three F10 skirmishes: `F10_Skirmish_Sniper_Grenadier_Goon`, `F10_Skirmish_RaidLeader_Medic_Marauder` and `F10_Skirmish_Maniac_Scout_Marauder`. To list all presets, loop `for _, list in pairs(Presets.TestCombat) do for _, p in ipairs(list) do ... end end` and return `p.id`.
 
-1. Run `scripts/lua.py lua/test-fight.lua`. It starts the preset with the fixed party Wolf, Steroid, Fox and Kalyna. Without a player squad, `TestCombatEnterSector` picks one of 7 parties at random (`Lua/GameSession.lua:817`).
+1. Run `scripts/lua.py lua/test-fight.lua`. It starts `F10_Skirmish_Sniper_Grenadier_Goon` with the fixed party Wolf, Steroid, Fox and Kalyna. For another preset, first set its id: `echo 'claude_test_fight = "<id>" return claude_test_fight' | scripts/lua.py`. Without a player squad, `TestCombatEnterSector` picks one of 7 parties at random (`Lua/GameSession.lua:817`). Then `g_Units.Fox` can be nil.
 2. Run `scripts/wait-load.sh`.
 3. Run `scripts/wait.sh 'IsKindOf(GetInGameInterfaceModeDlg(), "IModeDeployment")'`.
 4. End the deployment with `CreateRealTimeThread(function() GetInGameInterfaceModeDlg():StartExploration() end)` (`Lua/GameTests.lua:544`). The game goes to `IModeExploration`, not to combat.
 5. If the mod under test has a log level option, set it again: `m.options.LogLevel = "Info"`, then `Msg("ApplyModOptions", m.id)`. `m` is the entry of the mod in `ModsLoaded`. Do this after each fight start.
 6. Start combat with a move of a merc toward the enemies. See [Act](#act).
+
+## Auto-player
+
+`lua/autoplay.lua` plays the `player1` side in a game-time thread. Each controllable merc attacks the nearest enemy that it sees. If it sees none, it moves toward the nearest enemy and keeps the AP for one attack. Then the auto-player sends `EndTurn`, and sends it again up to 5 times if the turn does not change. At the start of each player turn, it logs the AP of each enemy.
+
+1. Start combat. See [Test fights](#test-fights).
+2. If a mod adds its own interrupts, run its hook file first. For quickdraw, run `tools/autoplay-iis.lua` of that repo. The file sets `claude_auto_hooks`, which the header of `lua/autoplay.lua` describes.
+3. To put mercs on Overwatch in place of a move, set `claude_ow_units = {Fox = true}`.
+4. Run `scripts/lua.py lua/autoplay.lua`. It returns `started`.
+5. Run `scripts/wait.sh -t 1800 -s 300 -p claude_auto_status 'not g_Combat'`. The status is the last line that the auto-player logged. An enemy turn logs no line, so `-s 300` gives it 5 minutes. On a `stall`, read the log from the last `[PROBE] auto player turn` line, and read the state.
+6. Read the log with `scripts/log.sh -s '[PROBE] auto player turn 1 start'`.
+
+To stop it, set `claude_auto_stop = true`. A new run of `lua/autoplay.lua` deletes the thread of the run before it. The auto-player skips a turn that it ended in the same fight, so a restart does not end a turn twice.
 
 ## Change the mod list
 
@@ -91,7 +107,7 @@ A test fight starts a `TestCombat` preset on its map with a new game session. It
 
 ## Known problems in combat
 
-These came from an auto-player: a loop that acts for each controllable merc and sends `EndTurn` on each `player1` turn.
+These came from runs of the [auto-player](#auto-player).
 
 - In player turn 1 of three runs, the first `EndTurn` did not register. `g_Combat.player_end_turn[netUniqueId]` stayed nil. In one run, the fourth send worked. In the other two runs, five sends failed, and one `EndTurn` from a separate `scripts/lua.py` call worked at once. In later turns, the first send worked. The cause is not known. After each `EndTurn`, wait 3 s for the turn to change, and send it again up to 5 times.
 - In player turn 1 of three runs, only the first merc acted. The other mercs logged no line. The cause is not known. Read the AP of each merc after turn 1.
