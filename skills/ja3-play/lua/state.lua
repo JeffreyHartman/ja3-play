@@ -1,4 +1,5 @@
 -- Returns a compact text view of the game: map, pause reasons, open dialogs, popups, combat turn, and each live unit of the player and enemy teams.
+-- With claude_auto_hooks.interrupt_active set, the combat line also shows whether a mod interrupt is active.
 -- `ctl` is Unit:CanBeControlled(), which is correct in a player turn and in a mod interrupt that overrides it, as quickdraw does.
 local t = {}
 local pauses = {}
@@ -13,7 +14,9 @@ if g_ZuluMessagePopup and next(g_ZuluMessagePopup) then
 end
 if g_Combat then
   local team = g_CurrentTeam and g_Teams[g_CurrentTeam]
-  t[#t + 1] = string.format("combat turn=%s team=%s control=%s", tostring(g_Combat.current_turn), tostring(team and team.side), tostring(team and team.control))
+  local hooks = claude_auto_hooks or empty_table
+  local interrupt = hooks.interrupt_active and string.format(" interrupt=%s", tostring(hooks.interrupt_active() and true)) or ""
+  t[#t + 1] = string.format("combat turn=%s team=%s control=%s%s", tostring(g_Combat.current_turn), tostring(team and team.side), tostring(team and team.control), interrupt)
 else
   t[#t + 1] = "exploration"
 end
