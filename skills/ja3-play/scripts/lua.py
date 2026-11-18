@@ -44,9 +44,12 @@ def evaluate(expression: str, port: int) -> tuple[bool, str]:
         _, buf = recv_response(sock, buf, 1)
         send(sock, 2, "attach", {})
         _, buf = recv_response(sock, buf, 2)
-        send(sock, 3, "evaluate", {"expression": expression, "context": "repl"})
-        msg, buf = recv_response(sock, buf, 3)
-        send(sock, 4, "disconnect", {})
+        # The debugger cuts each result at config.MaxWatchLenValue, default 512 characters.
+        send(sock, 3, "evaluate", {"expression": "(function() config.MaxWatchLenValue = 1000000000 end)()", "context": "repl"})
+        _, buf = recv_response(sock, buf, 3)
+        send(sock, 4, "evaluate", {"expression": expression, "context": "repl"})
+        msg, buf = recv_response(sock, buf, 4)
+        send(sock, 5, "disconnect", {})
     result = msg.get("message") or (msg.get("body") or {}).get("result") or ""
     # Strings have a metatable in this engine, and the debugger prints it after the value.
     return bool(msg.get("success")), str(result).split(" {\n\tmetatable")[0]
