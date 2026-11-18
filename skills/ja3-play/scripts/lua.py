@@ -46,7 +46,9 @@ def evaluate(expression: str, port: int) -> tuple[bool, str]:
         _, buf = recv_response(sock, buf, 2)
         # The debugger cuts each result at config.MaxWatchLenValue, default 512 characters.
         send(sock, 3, "evaluate", {"expression": "(function() config.MaxWatchLenValue = 1000000000 end)()", "context": "repl"})
-        _, buf = recv_response(sock, buf, 3)
+        limit, buf = recv_response(sock, buf, 3)
+        if not limit.get("success"):
+            print("warning: could not raise config.MaxWatchLenValue, so results over 512 characters are cut", file=sys.stderr)
         send(sock, 4, "evaluate", {"expression": expression, "context": "repl"})
         msg, buf = recv_response(sock, buf, 4)
         send(sock, 5, "disconnect", {})

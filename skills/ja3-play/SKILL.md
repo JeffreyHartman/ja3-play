@@ -11,7 +11,7 @@ Paths in this file are relative to this skill folder. Call each script by its fu
 
 ## Where to run
 
-Play in a playtest agent. Each state read, log read and wait of a game test stays in the context of the session that runs it, and a playtest of 2 hours filled a session. A new agent writes about 32k tokens to the cache once. After that, each of its turns reads a small context, and the main session gets only the report.
+Play in a playtest agent. Each state read, log read and wait of a game test stays in the context of the session that runs it. A playtest of 2 hours filled a session. A new agent writes about 32k tokens to the cache once. After that, each of its turns reads a small context, and the main session gets only the report.
 
 Run the steps inline in this session in these cases only:
 
@@ -36,7 +36,7 @@ If a check fails, fix the code in this session, deploy it, and send the retest t
 
 1. **Launch.** On Linux, run `scripts/launch.sh`. It finds the game and Proton in the Steam libraries and starts the debug build through Proton. If the debugger already listens, it starts nothing. On Windows, run `JA3Debug.exe -no_interactive_asserts` from the game folder. Done when the script prints `debugger listening`.
 2. **Wait for the main menu.** Run `scripts/wait.sh 'GetDialog("PreGameMenu") ~= nil'`. Done when it prints `OK true`. Before that, the debugger already answers, but the save list is not ready. This took about 20 s after the port opened.
-3. **Load a save or start a test fight.** A test fight needs no save and starts the same party each time. For a combat test, use it unless the user names a save. To play the fight without a turn-by-turn loop, start the auto-player. See [reference.md](reference.md#auto-player). Its steps are in [reference.md](reference.md#test-fights). For a save, list the saves and load one in a thread. The calls are in [reference.md](reference.md#load-and-save). Then run `scripts/wait-load.sh`. After a load, the loading screen stays open and waits for a click on "Start". The script waits for the loaded state and clicks Start. Then close the satellite view and the notification popup if they are open, because they pause the game. Done when `PauseReasons` is empty.
+3. **Load a save or start a test fight.** A test fight needs no save and starts the same party each time. For a combat test, use it unless the user names a save. Its steps are in [reference.md](reference.md#test-fights). To play the fight without a turn-by-turn loop, start the auto-player. See [reference.md](reference.md#auto-player). For a save, list the saves and load one in a thread. The calls are in [reference.md](reference.md#load-and-save). Then run `scripts/wait-load.sh`. After a load, the loading screen stays open and waits for a click on "Start". The script waits for the loaded state and clicks Start. Then close the satellite view and the notification popup if they are open, because they pause the game. Done when `PauseReasons` is empty.
 4. **Play.** Repeat this loop:
    - Read the state with `scripts/lua.py lua/state.lua`. The `ctl=true` units are the units that the player controls now.
    - Run one action in a game-time thread. See [Lua in the debugger](#lua-in-the-debugger).

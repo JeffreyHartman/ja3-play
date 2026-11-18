@@ -27,6 +27,11 @@ end=$((SECONDS + timeout))
 last="" since=$SECONDS
 while :; do
 	r=$("$S/lua.py" -e "$1")
+	if [[ "$r" == "OK true" ]]; then
+		[ -n "$status" ] && "$S/lua.py" -e "$status"
+		echo "$r"
+		exit 0
+	fi
 	if [ -n "$status" ]; then
 		st=$("$S/lua.py" -e "$status")
 		echo "$st"
@@ -36,10 +41,6 @@ while :; do
 			echo "stall: status unchanged for $((SECONDS - since)) s: $st"
 			exit 3
 		fi
-	fi
-	if [[ "$r" == "OK true" ]]; then
-		echo "$r"
-		exit 0
 	fi
 	if ((SECONDS >= end)); then
 		echo "timeout: $r"

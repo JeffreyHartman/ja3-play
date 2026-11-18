@@ -23,7 +23,7 @@ while getopts "fars:e:b:w:x:" opt; do
 		b) build="$OPTARG" ;;
 		w) width="$OPTARG" ;;
 		x) drop="$OPTARG" ;;
-		*) sed -n '2,13p' "$0" >&2; exit 2 ;;
+		*) sed -n '2,12p' "$0" >&2; exit 2 ;;
 	esac
 done
 shift $((OPTIND - 1))
@@ -63,11 +63,12 @@ fi
 
 # Values go through ENVIRON because awk -v drops their backslashes.
 # Stack lines after [LUA ERROR] start with two spaces. A mod load error puts its message on the next line.
-# CommonLua localization logs the UserText error, with a stack, after each load.
+# After each load, CommonLua localization logs the UserText error, then one line of text, then a stack.
 export JA3_TAGS="${1:-\[PROBE\]}" JA3_END="$endmark" JA3_DROP="$drop"
 filter='
 	function out(line) {
 		if (!raw) {
+			# Unit ids lose their squad and sector prefix, for example InitialSquad1:K10: or TestCombat:F10:, and their #2000000024 handle.
 			gsub(/[A-Za-z0-9_]+:[A-Z][0-9]+:/, "", line)
 			gsub(/#[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]/, "", line)
 			if (width > 0 && length(line) > width) line = substr(line, 1, width)
@@ -76,7 +77,7 @@ filter='
 	}
 	NR > 1 && ENVIRON["JA3_END"] != "" && index($0, ENVIRON["JA3_END"]) { out($0); exit }
 	!raw && /\[LUA ERROR\]/ && /UserText before/ { stack = 0; skip = 1; next }
-	skip == 1 && !/^  / { skip = 2; next }
+	skip == 1 && !/^  / && !/^\[/ { skip = 2; next }
 	skip && /^  / { next }
 	{ skip = 0 }
 	!raw && ENVIRON["JA3_DROP"] != "" && $0 ~ ENVIRON["JA3_DROP"] { stack = 0; next }
@@ -91,9 +92,12 @@ filter='
 all=0
 [ "$mode" = "-a" ] && all=1
 
+follow=()
+[ "$mode" = "-f" ] && follow=(-F)
+
 echo "== $newest from line $start" >&2
-if [ "$mode" = "-f" ]; then
-	tail -n "+$start" -F "$newest" | awk -v raw="$raw" -v all="$all" -v width="$width" "$filter"
-else
-	tail -n "+$start" "$newest" | awk -v raw="$raw" -v all="$all" -v width="$width" "$filter"
-fi
+# At the end mark, awk exits before tail, and tail then ends with SIGPIPE, status 141.
+status=0
+tail -n "+$start" "${follow[@]}" "$newest" | awk -v raw="$raw" -v all="$all" -v width="$width" "$filter" || status=$?
+[ "$status" -eq 141 ] && status=0
+exit "$status"

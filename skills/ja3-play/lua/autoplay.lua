@@ -15,6 +15,11 @@ local function P(fmt, ...)
 	claude_auto_status = s
 end
 
+local function PlayerTurn()
+	local team = g_CurrentTeam and g_Teams[g_CurrentTeam]
+	return team and team.side == "player1"
+end
+
 local function Busy(u)
 	return #(SyncEventsQueue or empty_table) > 0 or (IsValid(u) and not u:IsDead() and not u:IsIdleCommand()) or HasAnyCombatActionInProgress and HasAnyCombatActionInProgress()
 end
@@ -121,7 +126,7 @@ local function ActWith(u)
 		if claude_auto_stop or not IsValid(u) or u:IsDead() or not u:CanBeControlled() then return end
 		local did = TryAttack(u)
 		if not did and i <= 2 then
-			if (claude_ow_units or empty_table)[u.session_id] and g_Teams[g_CurrentTeam].side == "player1" then
+			if (claude_ow_units or empty_table)[u.session_id] and PlayerTurn() then
 				did = TryOverwatch(u)
 				if did then WaitDone(u) return end
 			else
@@ -139,7 +144,7 @@ local function EndPlayerTurn(turn)
 	for i = 1, 5 do
 		CreateRealTimeThread(NetSyncEvent, "EndTurn", netUniqueId)
 		Sleep(3000)
-		if not g_Combat or g_Combat.current_turn ~= turn or g_Teams[g_CurrentTeam].side ~= "player1" then return end
+		if not g_Combat or g_Combat.current_turn ~= turn or not PlayerTurn() then return end
 		P("EndTurn %d not registered, send %d", turn, i + 1)
 	end
 end
@@ -161,7 +166,6 @@ claude_auto = CreateGameTimeThread(function()
 	local done_turn = claude_done_turn and claude_done_turn.combat == g_Combat and claude_done_turn.turn
 	while not claude_auto_stop do
 		if not g_Combat then P("no combat") break end
-		local team = g_CurrentTeam and g_Teams[g_CurrentTeam]
 		local ctl = Controllable()
 		if InterruptActive() and #ctl > 0 then
 			P("merc interrupt: %d controllable", #ctl)
@@ -172,7 +176,7 @@ claude_auto = CreateGameTimeThread(function()
 				CreateRealTimeThread(NetSyncEvent, "EndTurn", netUniqueId)
 				Sleep(2000)
 			end
-		elseif team and team.side == "player1" and not InterruptActive() and #ctl > 0 and done_turn ~= g_Combat.current_turn then
+		elseif PlayerTurn() and not InterruptActive() and #ctl > 0 and done_turn ~= g_Combat.current_turn then
 			P("player turn %d start", g_Combat.current_turn)
 			Sleep(4000)
 			LogEnemyAP()
@@ -184,7 +188,7 @@ claude_auto = CreateGameTimeThread(function()
 				end
 			end
 			WaitDone()
-			if not InterruptActive() and g_Teams[g_CurrentTeam].side == "player1" then
+			if not InterruptActive() and PlayerTurn() then
 				done_turn = g_Combat.current_turn
 				claude_done_turn = { combat = g_Combat, turn = done_turn }
 				P("player turn %d end", done_turn)
